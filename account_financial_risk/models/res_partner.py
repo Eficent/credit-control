@@ -1,4 +1,5 @@
 # Copyright 2016-2018 Tecnativa - Carlos Dauden
+# Copyright 2020 ForgeFlow
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from datetime import datetime
@@ -27,80 +28,80 @@ class ResPartner(models.Model):
         currency_field="risk_currency_id",
         help='Total amount of invoices in Draft or Pro-forma state')
     risk_invoice_open_include = fields.Boolean(
-        string='Include Open Invoices/Principal Balance',
+        string='Include Non-Overdue Invoice Amounts',
         help='Full risk computation.\n'
              'Residual amount of move lines not reconciled with the same '
              'account that is set as partner receivable and date maturity '
              'not exceeded, considering Due Margin set in account settings.',
     )
     risk_invoice_open_limit = fields.Monetary(
-        string='Limit In Open Invoices/Principal Balance',
+        string='Limit In Non-Overdue Invoice Amounts',
         currency_field="risk_currency_id",
         help='Set 0 if it is not locked',
     )
     risk_invoice_open = fields.Monetary(
         compute='_compute_risk_account_amount',
-        string='Total Open Invoices/Principal Balance',
+        string='Total Non-Overdue Invoice Amounts',
         currency_field="risk_currency_id",
         help='Residual amount of move lines not reconciled with the same '
              'account that is set as partner receivable and date maturity '
              'not exceeded, considering Due Margin set in account settings.',
     )
     risk_invoice_unpaid_include = fields.Boolean(
-        string='Include Unpaid Invoices/Principal Balance',
+        string='Include Overdue Invoice Amounts',
         help='Full risk computation.\n'
              'Residual amount of move lines not reconciled with the same '
              'account that is set as partner receivable and date maturity '
              'exceeded, considering Due Margin set in account settings.',
     )
     risk_invoice_unpaid_limit = fields.Monetary(
-        string='Limit In Unpaid Invoices/Principal Balance',
+        string='Limit In Overdue Invoice Amounts',
         currency_field="risk_currency_id",
         help='Set 0 if it is not locked',
     )
     risk_invoice_unpaid = fields.Monetary(
         compute='_compute_risk_account_amount',
-        string='Total Unpaid Invoices/Principal Balance',
+        string='Total Overdue Invoice Amounts',
         currency_field="risk_currency_id",
         help='Residual amount of move lines not reconciled with the same '
              'account that is set as partner receivable and date maturity '
              'exceeded, considering Due Margin set in account settings.',
     )
     risk_account_amount_include = fields.Boolean(
-        string='Include Other Account Open Amount',
+        string='Include Other Non-Overdue Amounts',
         help='Full risk computation.\n'
              'Residual amount of move lines not reconciled with distinct '
              'account that is set as partner receivable and date maturity '
              'not exceeded, considering Due Margin set in account settings.',
     )
     risk_account_amount_limit = fields.Monetary(
-        string='Limit Other Account Open Amount',
+        string='Limit Other Non-Overdue Amounts',
         currency_field="risk_currency_id",
         help='Set 0 if it is not locked',
     )
     risk_account_amount = fields.Monetary(
         compute='_compute_risk_account_amount',
-        string='Total Other Account Open Amount',
+        string='Total Other Non-Overdue Amounts',
         currency_field="risk_currency_id",
         help='Residual amount of move lines not reconciled with distinct '
              'account that is set as partner receivable and date maturity '
              'not exceeded, considering Due Margin set in account settings.',
     )
     risk_account_amount_unpaid_include = fields.Boolean(
-        string='Include Other Account Unpaid Amount',
+        string='Include Other Overdue Amounts',
         help='Full risk computation.\n'
              'Residual amount of move lines not reconciled with distinct '
              'account that is set as partner receivable and date maturity '
              'exceeded, considering Due Margin set in account settings.',
     )
     risk_account_amount_unpaid_limit = fields.Monetary(
-        string='Limit Other Account Unpaid Amount',
+        string='Limit Other Overdue Amounts',
         currency_field="risk_currency_id",
         help='Set 0 if it is not locked',
     )
     risk_account_amount_unpaid = fields.Monetary(
         compute='_compute_risk_account_amount',
-        string='Total Other Account Unpaid Amount',
+        string='Total Other Overdue Amounts',
         currency_field="risk_currency_id",
         help='Residual amount of move lines not reconciled with distinct '
              'account that is set as partner receivable and date maturity '
@@ -110,16 +111,25 @@ class ResPartner(models.Model):
         compute='_compute_risk_exception',
         string='Total Risk',
         currency_field="risk_currency_id",
-        help='Sum of total risk included')
+        help='Sum of total risk included',
+    )
     risk_exception = fields.Boolean(
         compute='_compute_risk_exception',
         search='_search_risk_exception',
         string='Risk Exception',
-        help='It Indicate if partner risk exceeded',
+        help='It indicates if partner risk exceeded',
+    )
+    risk_amount_exceeded = fields.Monetary(
+        string='Risk Over Limit',
+        currency_field="risk_currency_id",
+        compute='_compute_risk_exception',
     )
     credit_policy = fields.Char()
     risk_allow_edit = fields.Boolean(compute='_compute_risk_allow_edit')
-    credit_limit = fields.Float(track_visibility='onchange')
+    credit_limit = fields.Float(
+        track_visibility='onchange',
+        help="If zero, there will be no risk.",
+    )
     credit_currency = fields.Selection(
         selection=[('company', 'Company Currency'),
                    ('receivable', 'Receivable Currency'),
@@ -208,7 +218,9 @@ class ResPartner(models.Model):
         'invoice_ids', 'invoice_ids.state',
         'invoice_ids.amount_total_company_signed',
         'child_ids.invoice_ids', 'child_ids.invoice_ids.state',
-        'child_ids.invoice_ids.amount_total_company_signed')
+        'child_ids.invoice_ids.amount_total_company_signed',
+        'country_id',
+        'company_id.currency_id')
     def _compute_risk_invoice(self):
         self.update({'risk_invoice_draft': 0.0})
         # When p is NewId object instance bool(p.id) is False
@@ -247,8 +259,9 @@ class ResPartner(models.Model):
                     ('user_type_id.type', '=', 'receivable'),
                     ('date_maturity', '>=', max_date)
                 ],
-                'fields': ['partner_id', 'account_id', 'amount_residual'],
-                'group_by': ['partner_id', 'account_id']
+                'fields': ['partner_id', 'account_id', 'amount_residual',
+                           'amount_residual_currency', 'currency_id'],
+                'group_by': ['partner_id', 'account_id', 'currency_id'],
             },
             'unpaid': {
                 'domain': company_domain + [
@@ -256,15 +269,20 @@ class ResPartner(models.Model):
                     ('user_type_id.type', '=', 'receivable'),
                     ('date_maturity', '<', max_date)
                 ],
-                'fields': ['partner_id', 'account_id', 'amount_residual'],
-                'group_by': ['partner_id', 'account_id']
+                'fields': ['partner_id', 'account_id', 'amount_residual',
+                           'amount_residual_currency', 'currency_id'],
+                'group_by': ['partner_id', 'account_id', 'currency_id'],
             }
         }
 
     @api.multi
     @api.depends('move_line_ids.amount_residual',
                  'move_line_ids.date_maturity',
-                 'company_id.invoice_unpaid_margin')
+                 'company_id.invoice_unpaid_margin',
+                 'credit_currency', 'manual_credit_currency_id',
+                 'property_account_receivable_id.currency_id',
+                 'country_id',
+                 'company_id.currency_id')
     def _compute_risk_account_amount(self):
         self.update({
             'risk_invoice_open': 0.0,
@@ -298,6 +316,11 @@ class ResPartner(models.Model):
         }
         # Partner receivable account determines if amount is in invoice field
         for reg in groups['open']['read_group']:
+            partner = self.env['res.partner'].browse(reg['partner_id'][0])
+            account = self.env['account.account'].browse(reg['account_id'][0])
+            currency = self.env['res.currency'].browse(
+                reg['currency_id'] and reg['currency_id'][0] or
+                account.company_id.currency_id.id)
             if reg['partner_id'][0] != self.id:
                 continue  # pragma: no cover
             account = self.env['account.account'].browse(reg['account_id'][0])
@@ -332,22 +355,27 @@ class ResPartner(models.Model):
         risk_field_list = self._risk_field_list()
         for partner in self:
             amount = 0.0
+            amount_exceeded = 0.0
             risk_exception = False
             if not partner.customer:
                 partner.risk_total = amount
+                partner.risk_amount_exceeded = amount_exceeded
                 partner.risk_exception = risk_exception
                 continue
             for risk_field in risk_field_list:
                 field_value = getattr(partner, risk_field[0], 0.0)
                 max_value = getattr(partner, risk_field[1], 0.0)
                 include = getattr(partner, risk_field[2], False)
-                if max_value and field_value > max_value:
+                if include and max_value and field_value > max_value:
                     risk_exception = True
+                    amount_exceeded += field_value - max_value
                 if include:
                     amount += field_value
             if partner.credit_limit and amount > partner.credit_limit:
                 risk_exception = True
+                amount_exceeded = amount - partner.credit_limit
             partner.risk_total = amount
+            partner.risk_amount_exceeded = amount_exceeded
             partner.risk_exception = risk_exception
 
     @api.model
@@ -414,3 +442,104 @@ class ResPartner(models.Model):
             'context': self.env.context,
             'domain': domain,
         }
+
+    @api.multi
+    def action_view_partner_in_risk(self):
+        self.ensure_one()
+        action = self.env.ref('account_financial_risk.'
+                              'action_partner_in_risk_tree').read()[0]
+        return action
+
+    @api.multi
+    def _get_domain_risk_tree(self):
+        domain = []
+        risk_type = self._context.get('risk_type')
+        max_date = self._max_risk_date_due()
+        if risk_type == "draft":
+            domain += [
+                ('partner_id', 'child_of', self.ids),
+                ('type', 'in', ['out_invoice', 'out_refund']),
+                ('state', 'in', ['draft', 'proforma', 'proforma2']),
+                ('amount_total', '!=', 0.0),
+            ]
+        elif risk_type == "open":
+            domain += [
+                ('partner_id', 'in', self.ids),
+                ('reconciled', '=', False),
+                ('account_id.internal_type', '=', 'receivable'),
+                ('date_maturity', '>=', max_date),
+                ('account_id', '=', self.property_account_receivable_id.id),
+                '|', ('amount_residual_currency', '!=', 0.0),
+                ('amount_residual', '!=', 0.0),
+            ]
+        elif risk_type == "unpaid":
+            domain += [
+                ('partner_id', 'in', self.ids),
+                ('reconciled', '=', False),
+                ('account_id.internal_type', '=', 'receivable'),
+                ('date_maturity', '<', max_date),
+                ('account_id', '=', self.property_account_receivable_id.id),
+                '|', ('amount_residual_currency', '!=', 0.0),
+                ('amount_residual', '!=', 0.0),
+            ]
+        elif risk_type == "amount":
+            domain += [
+                ('partner_id', 'in', self.ids),
+                ('reconciled', '=', False),
+                ('account_id.internal_type', '=', 'receivable'),
+                ('date_maturity', '>=', max_date),
+                ('account_id', '!=', self.property_account_receivable_id.id),
+                '|', ('amount_residual_currency', '!=', 0.0),
+                ('amount_residual', '!=', 0.0),
+            ]
+        elif risk_type == "amount_unpaid":
+            domain += [
+                ('partner_id', 'in', self.ids),
+                ('reconciled', '=', False),
+                ('account_id.internal_type', '=', 'receivable'),
+                ('date_maturity', '<', max_date),
+                ('account_id', '!=', self.property_account_receivable_id.id),
+                '|', ('amount_residual_currency', '!=', 0.0),
+                ('amount_residual', '!=', 0.0),
+            ]
+        return domain
+
+    @api.multi
+    def _get_view_risk_tree(self, domain):
+        risk_type = self._context.get('risk_type')
+        if risk_type == "draft":
+            view_tree = self.env.ref('account_financial_risk.'
+                                     'view_account_invoice_risk_tree')
+            view_form = self.env.ref('account.invoice_form')
+            view = {'name': _('Invoices'),
+                    'type': 'ir.actions.act_window',
+                    'res_model': 'account.invoice',
+                    'view_type': 'form',
+                    'view_mode': 'tree, form',
+                    'views': [
+                        (view_tree.id, 'tree'),
+                        (view_form.id, 'form')],
+                    'domain': domain,
+                    }
+        else:
+            view_tree = self.env.ref('account_financial_risk.'
+                                     'view_account_move_line_risk_tree')
+            view_form = self.env.ref('account.view_move_line_form')
+            view = {'name': _('Account Move Lines'),
+                    'type': 'ir.actions.act_window',
+                    'res_model': 'account.move.line',
+                    'view_type': 'form',
+                    'view_mode': 'tree, form',
+                    'views': [
+                        (view_tree.id, 'tree'),
+                        (view_form.id, 'form')],
+                    'domain': domain,
+                    }
+        return view
+
+    @api.multi
+    def action_risk_tree(self):
+        self.ensure_one()
+        domain = self._get_domain_risk_tree()
+        view = self._get_view_risk_tree(domain)
+        return view

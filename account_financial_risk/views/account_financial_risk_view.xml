@@ -25,4 +25,50 @@
         </field>
     </record>
 
+    <record id="view_account_invoice_risk_tree" model="ir.ui.view">
+        <field name="name">account.invoice.risk.tree</field>
+        <field name="model">account.invoice</field>
+        <field eval="30" name="priority"/>
+        <field name="arch" type="xml">
+            <tree string="Invoices">
+                <field name="name"/>
+                <field name="date_due"/>
+                <field name="number"/>
+                <field name="partner_id"/>
+                <field name="amount_total_company_signed" widget="monetary" string="Total" sum="Total" options="{'currency_field': 'company_currency_id'}"/>
+                <field name="residual_company_signed" widget="monetary" options="{'currency_field': 'company_currency_id'}"
+                       string="Amount Due" sum="Amount Due"/>
+                <field name="risk_amount_total_currency" widget="monetary" options="{'currency_field': 'risk_currency_id'}"
+                       string="Risk Amount Total" sum="Risk Amount Total"/>
+                <field name="type"/>
+                <field name="state"/>
+                <field name="currency_id" invisible="1"/>
+                <field name="company_currency_id" invisible="1"/>
+                <field name="risk_currency_id" invisible="1"/>
+                <field name='company_id' groups="base.group_multi_company"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_account_move_line_risk_tree" model="ir.ui.view">
+        <field name="name">account.move.line.risk.tree</field>
+        <field name="model">account.move.line</field>
+        <field eval="30" name="priority"/>
+        <field name="arch" type="xml">
+            <tree string="Account Move Lines" create="0">
+                <field name="move_id"/>
+                <field name="partner_id"/>
+                <field name="account_id"/>
+                <field name="amount_residual" widget="monetary" options="{'currency_field': 'company_currency_id'}"
+                       string="Residual Amount" sum="Residual Amount"/>
+                <field name="risk_amount_residual" widget="monetary" options="{'currency_field': 'risk_currency_id'}"
+                       string="Risk Residual Amount" sum="Risk Residual Amount"/>
+                <field name="date_maturity"/>
+                <field name="company_currency_id" invisible="1"/>
+                <field name="risk_currency_id" invisible="1"/>
+                <field name='company_id' groups="base.group_multi_company"/>
+            </tree>
+        </field>
+    </record>
+
 </odoo>

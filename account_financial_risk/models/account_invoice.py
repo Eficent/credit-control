@@ -1,4 +1,5 @@
 # Copyright 2016-2018 Tecnativa - Carlos Dauden
+# Copyright 2020 ForgeFlow
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
@@ -37,7 +38,7 @@ class AccountInvoice(models.Model):
         partner = self.partner_id.commercial_partner_id
         exception_msg = ""
         if partner.risk_exception:
-            exception_msg = _("Financial risk exceeded.\n")
+            exception_msg = _("Financial risk warning.\n")
         elif partner.risk_invoice_open_limit and (
                 (partner.risk_invoice_open + self.risk_amount_total_currency)
                 > partner.risk_invoice_open_limit):
@@ -49,7 +50,7 @@ class AccountInvoice(models.Model):
                 (partner.risk_total + self.risk_amount_total_currency) >
                 partner.credit_limit):
             exception_msg = _(
-                "This invoice exceeds the financial risk.\n")
+                "This invoice exceeds the credit limit.\n")
         return exception_msg
 
     @api.multi

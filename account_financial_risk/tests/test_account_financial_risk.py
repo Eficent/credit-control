@@ -13,6 +13,9 @@ class TestPartnerFinancialRisk(SavepointCase):
         type_revenue = cls.env.ref('account.data_account_type_revenue')
         type_receivable = cls.env.ref('account.data_account_type_receivable')
         tax_group_taxes = cls.env.ref('account.tax_group_taxes')
+        main_company = cls.env.ref('base.main_company')
+        cls.cr.execute("UPDATE res_company SET currency_id = %s WHERE id = %s",
+                       [cls.env.ref('base.USD').id, main_company.id])
         cls.account_sale = cls.env['account.account'].create({
             'name': 'Sale',
             'code': 'XX_700',
@@ -95,7 +98,7 @@ class TestPartnerFinancialRisk(SavepointCase):
         self.assertAlmostEqual(self.partner.risk_invoice_unpaid, 550.0)
         wiz_dic = invoice2.action_invoice_open()
         wiz = self.env[wiz_dic['res_model']].browse(wiz_dic['res_id'])
-        self.assertEqual(wiz.exception_msg, "Financial risk exceeded.\n")
+        self.assertEqual(wiz.exception_msg, "Financial risk warning.\n")
         self.partner.risk_invoice_unpaid_limit = 0.0
         self.assertFalse(self.partner.risk_exception)
         unrisk_partners = self.partner.search([('risk_exception', '=', False)])
@@ -113,7 +116,7 @@ class TestPartnerFinancialRisk(SavepointCase):
         wiz_dic = invoice2.action_invoice_open()
         wiz = self.env[wiz_dic['res_model']].browse(wiz_dic['res_id'])
         self.assertEqual(wiz.exception_msg,
-                         "This invoice exceeds the financial risk.\n")
+                         "This invoice exceeds the credit limit.\n")
         self.assertAlmostEqual(self.partner.risk_invoice_open, 0.0)
         wiz.button_continue()
         self.assertAlmostEqual(self.partner.risk_invoice_open, 550.0)
@@ -198,3 +201,23 @@ class TestPartnerFinancialRisk(SavepointCase):
         self.assertEqual(action['res_model'], 'account.move.line')
         self.assertTrue(action['view_id'])
         self.assertTrue(action['domain'])
+
+    def test_invoice_risk_draft_same_currency(self):
+        self.partner.risk_invoice_draft_include = True
+        self.invoice.currency_id = self.env.ref('base.USD')
+        self.partner.credit_limit = 100.0
+        self.assertGreater(self.partner.risk_total, self.partner.credit_limit)
+        self.assertTrue(self.partner.risk_total,
+                        self.invoice.risk_amount_total_currency)
+        self.assertTrue(self.partner.risk_amount_exceeded,
+                        self.partner.risk_total - self.partner.credit_limit)
+
+    def test_invoice_risk_draft_different_currency(self):
+        self.partner.risk_invoice_draft_include = True
+        self.invoice.currency_id = self.env.ref('base.EUR')
+        self.partner.credit_limit = 100.0
+        self.assertGreater(self.partner.risk_total, self.partner.credit_limit)
+        self.assertTrue(self.partner.risk_total,
+                        self.invoice.risk_amount_total_currency)
+        self.assertTrue(self.partner.risk_amount_exceeded,
+                        self.partner.risk_total - self.partner.credit_limit)

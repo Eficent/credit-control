@@ -16,6 +16,7 @@
                         context="{'open_risk_field': 'risk_sale_order'}">
                     <field name="risk_sale_order" nolabel="1" widget='monetary' options="{'currency_field': 'risk_currency_id'}"/>
                 </button>
+                <button name="action_risk_tree" type="object" icon="fa-search" context="{'risk_type': 'sale'}"/>
             </field>
             <field name="risk_invoice_draft_limit" position="before">
                 <field name="risk_sale_order_limit"

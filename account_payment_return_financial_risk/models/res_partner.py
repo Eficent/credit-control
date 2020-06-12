@@ -38,8 +38,9 @@ class ResPartner(models.Model):
                 ('user_type_id.type', '=', 'receivable'),
                 ('partial_reconcile_returned_ids', '!=', False)
             ],
-            'fields': ['partner_id', 'account_id', 'amount_residual'],
-            'group_by': ['partner_id', 'account_id']
+            'fields': ['partner_id', 'account_id', 'amount_residual',
+                       'amount_residual_currency', 'currency_id'],
+            'group_by': ['partner_id', 'account_id', 'currency_id'],
         }
         return res
 
@@ -70,3 +71,23 @@ class ResPartner(models.Model):
             return 'account.move.line', domain
         else:
             return super()._get_field_risk_model_domain(field_name)
+
+    @api.multi
+    def _get_domain_risk_tree(self):
+        domain = super(ResPartner, self)._get_domain_risk_tree()
+        risk_type = self._context.get('risk_type')
+        if risk_type in ["open", "unpaid", "amount", "amount_unpaid"]:
+            domain += [
+                ('partial_reconcile_returned_ids', '=', False),
+            ]
+        elif risk_type == "returned":
+            domain += [
+                ('partner_id', 'in', self.ids),
+                ('reconciled', '=', False),
+                ('user_type_id.type', '=', 'receivable'),
+                ('partial_reconcile_returned_ids', '!=', False),
+                ('account_id', '=', self.property_account_receivable_id.id),
+                '|', ('amount_residual_currency', '!=', 0.0),
+                ('amount_residual', '!=', 0.0),
+            ]
+        return domain

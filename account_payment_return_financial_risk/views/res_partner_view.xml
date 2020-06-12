@@ -13,6 +13,7 @@
                         context="{'open_risk_field': 'risk_payment_return'}">
                     <field name="risk_payment_return" nolabel="1" widget='monetary' options="{'currency_field': 'risk_currency_id'}"/>
                 </button>
+                <button name="action_risk_tree" type="object" icon="fa-search" context="{'risk_type': 'returned'}"/>
             </field>
             <field name="risk_account_amount_limit" position="before">
                 <field name="risk_payment_return_limit"

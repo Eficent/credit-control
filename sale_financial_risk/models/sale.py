@@ -10,6 +10,29 @@ from odoo.tools.misc import DEFAULT_SERVER_DATETIME_FORMAT
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
+    risk_currency_id = fields.Many2one(
+        related="partner_id.risk_currency_id")
+    risk_amount_total_currency = fields.Monetary(
+        string="Risk Amount Total",
+        currency_field="risk_currency_id",
+        compute="_compute_risk_amount_total_currency")
+
+    @api.multi
+    @api.depends('order_line.price_total',
+                 'partner_id.credit_currency',
+                 'partner_id.manual_credit_currency_id',
+                 'partner_id.property_account_receivable_id.currency_id',
+                 'partner_id.country_id',
+                 'company_id.currency_id')
+    def _compute_risk_amount_total_currency(self):
+        currency_model = self.env["res.currency"].sudo()
+        for sale in self:
+            sale.risk_amount_total_currency = currency_model.with_context(
+                date=sale.confirmation_date and sale.confirmation_date.date()
+                or fields.Date.context_today(self))._compute(
+                sale.currency_id, sale.risk_currency_id,
+                sale.amount_total)
+
     @api.multi
     def action_confirm(self):
         if not self.env.context.get('bypass_risk', False):
@@ -49,17 +72,27 @@ class SaleOrder(models.Model):
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
+    risk_currency_id = fields.Many2one(
+        related="order_partner_id.risk_currency_id")
     company_currency_id = fields.Many2one(
         comodel_name='res.currency',
         related='company_id.currency_id',
         string="Company Currency",
         readonly=True,
+        store=True
     )
     risk_amount = fields.Monetary(
         string="Risk amount",
         compute='_compute_risk_amount',
         compute_sudo=True,
         currency_field="company_currency_id",
+        store=True
+    )
+    risk_amount_currency = fields.Monetary(
+        string="Risk amount",
+        compute='_compute_risk_amount_currency',
+        compute_sudo=True,
+        currency_field="risk_currency_id",
         store=True
     )
     # TODO: Analyze performance vs order_id.partner_id.commercial_partner_id
@@ -107,3 +140,25 @@ class SaleOrderLine(models.Model):
                     DEFAULT_SERVER_DATETIME_FORMAT).date()
                 or fields.Date.context_today(self)).compute(
                 risk_amount, line.company_id.currency_id, round=False)
+
+    @api.depends('state',
+                 'price_reduce_taxinc',
+                 'qty_delivered',
+                 'product_uom_qty',
+                 'qty_invoiced',
+                 'order_id.partner_id.credit_currency',
+                 'order_id.partner_id.manual_credit_currency_id',
+                 'order_id.partner_id.'
+                 'property_account_receivable_id.currency_id',
+                 'order_id.partner_id.country_id',
+                 'company_id.currency_id')
+    def _compute_risk_amount_currency(self):
+        for line in self:
+            confirmation_date = line.order_id.confirmation_date and datetime.strptime(
+                    line.order_id.confirmation_date,
+                    DEFAULT_SERVER_DATETIME_FORMAT).date()
+            line.risk_amount_currency = line.company_currency_id.with_context(
+                date=confirmation_date or
+                fields.Date.context_today(self)).compute(
+                line.risk_amount, line.risk_currency_id, round=False
+            )
